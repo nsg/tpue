@@ -1,0 +1,10 @@
+/target
+/dist
+/samples
+/eval/results
+/eval/data
+__pycache__/
+*.pyc
+/models/
+/AGENTS.md
+/CLAUDE.md

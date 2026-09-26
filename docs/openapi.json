@@ -1,0 +1,323 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "tpue",
+    "version": "0.1.0",
+    "description": "Coral Edge TPU object detection service"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "apiDocumentation",
+        "summary": "Rendered API documentation",
+        "responses": {
+          "200": {
+            "description": "HTML API documentation",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "summary": "Service readiness",
+        "responses": {
+          "200": {
+            "description": "The default model is ready",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "The model or device is unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List configured models",
+        "responses": {
+          "200": {
+            "description": "Configured models",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelsResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "openApiDocument",
+        "summary": "OpenAPI document",
+        "responses": {
+          "200": {
+            "description": "This OpenAPI 3.0.3 document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/detect": {
+      "post": {
+        "operationId": "detect",
+        "summary": "Detect objects in an image",
+        "parameters": [
+          {
+            "name": "threshold",
+            "in": "query",
+            "description": "Global score floor; overrides the configured value and the JSON body value",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "float",
+              "minimum": 0,
+              "exclusiveMinimum": true,
+              "maximum": 1,
+              "exclusiveMaximum": true
+            }
+          },
+          {
+            "name": "classes",
+            "in": "query",
+            "description": "Comma-separated class allowlist; overrides the JSON body value",
+            "required": false,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "max_detections",
+            "in": "query",
+            "description": "Maximum number of detections to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "uint",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "description": "Configured model name",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/jpeg": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "image/png": {
+              "schema": { "type": "string", "format": "binary" }
+            },
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/JsonDetectionRequest" }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["image"],
+                "properties": {
+                  "image": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Detection result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DetectionResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request, invalid override, empty or undecodable image, unknown model, or multipart read/size failure",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "413": {
+            "description": "Raw image or JSON request body exceeds server.max_body_bytes",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "415": {
+            "description": "Missing or unsupported Content-Type",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "503": {
+            "description": "Inference queue, thread, model, device, preprocessing, inference, or postprocessing unavailable",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "504": {
+            "description": "Inference request exceeded server.request_timeout_ms",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "JsonDetectionRequest": {
+        "type": "object",
+        "required": ["image"],
+        "properties": {
+          "image": {
+            "type": "string",
+            "format": "byte",
+            "description": "Standard base64-encoded image"
+          },
+          "threshold": {
+            "type": "number",
+            "format": "float",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 1,
+            "exclusiveMaximum": true
+          },
+          "classes": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "DetectionResponse": {
+        "type": "object",
+        "required": ["detections", "model", "image", "timing_ms"],
+        "properties": {
+          "detections": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Detection" }
+          },
+          "model": { "type": "string" },
+          "image": { "$ref": "#/components/schemas/ImageSize" },
+          "timing_ms": { "$ref": "#/components/schemas/Timing" }
+        }
+      },
+      "Detection": {
+        "type": "object",
+        "required": ["class", "confidence", "x", "y", "w", "h"],
+        "properties": {
+          "class": { "type": "string" },
+          "confidence": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 },
+          "x": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 },
+          "w": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 },
+          "h": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 }
+        }
+      },
+      "ImageSize": {
+        "type": "object",
+        "required": ["width", "height"],
+        "properties": {
+          "width": { "type": "integer", "format": "uint32", "minimum": 0 },
+          "height": { "type": "integer", "format": "uint32", "minimum": 0 }
+        }
+      },
+      "Timing": {
+        "type": "object",
+        "required": ["decode", "preprocess", "inference", "postprocess", "total"],
+        "properties": {
+          "decode": { "type": "number", "format": "double", "minimum": 0 },
+          "preprocess": { "type": "number", "format": "double", "minimum": 0 },
+          "inference": { "type": "number", "format": "double", "minimum": 0 },
+          "postprocess": { "type": "number", "format": "double", "minimum": 0 },
+          "total": { "type": "number", "format": "double", "minimum": 0 }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status", "model", "device", "uptime_s"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] },
+          "model": { "type": "string" },
+          "device": { "type": "string" },
+          "uptime_s": { "type": "integer", "format": "uint64", "minimum": 0 }
+        }
+      },
+      "ModelsResponse": {
+        "type": "object",
+        "required": ["models"],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Model" }
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": ["name", "file", "input_size", "labels", "model_type", "preprocess", "threshold", "nms_iou", "max_detections", "class_thresholds", "default"],
+        "properties": {
+          "name": { "type": "string" },
+          "file": { "type": "string" },
+          "input_size": { "type": "integer", "format": "uint32", "minimum": 1, "nullable": true },
+          "labels": { "type": "string" },
+          "model_type": { "type": "string", "enum": ["yolo-generic", "ssd"], "nullable": true },
+          "preprocess": { "type": "string", "enum": ["letterbox", "stretch"] },
+          "threshold": { "type": "number", "format": "float", "minimum": 0, "exclusiveMinimum": true, "maximum": 1, "exclusiveMaximum": true },
+          "nms_iou": { "type": "number", "format": "float", "minimum": 0, "maximum": 1 },
+          "max_detections": { "type": "integer", "format": "uint", "minimum": 1 },
+          "class_thresholds": {
+            "type": "object",
+            "additionalProperties": { "type": "number", "format": "float" }
+          },
+          "default": { "type": "boolean" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    }
+  }
+}

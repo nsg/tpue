@@ -1,0 +1,69 @@
+[server]
+bind = "0.0.0.0:8700"
+max_body_bytes = 8_000_000
+request_timeout_ms = 2000
+queue_depth = 8
+
+[runtime]
+tflite_library = "libtensorflowlite_c.so"
+edgetpu_library = "libedgetpu.so.1"
+device = "usb"
+
+[[models]]
+name = "yolov9s-512"
+default = true
+path = "/opt/tpue/models/yolov9-s-relu6-tpumax_512_int8_edgetpu.tflite"
+labels = "/opt/tpue/models/labels-coco17.txt"
+type = "yolo-generic"
+input_size = 512
+preprocess = "letterbox"
+threshold = 0.12
+nms_iou = 0.5
+max_detections = 50
+[models.class_thresholds]
+person = 0.12
+car = 0.18
+dog = 0.22
+cat = 0.09
+bicycle = 0.17
+truck = 0.22
+bus = 0.68
+
+[[models]]
+name = "yolov9s-320"
+default = false
+path = "/opt/tpue/models/yolov9-s-relu6-best_320_int8_edgetpu.tflite"
+labels = "/opt/tpue/models/labels-coco17.txt"
+type = "yolo-generic"
+input_size = 320
+preprocess = "letterbox"
+threshold = 0.11
+nms_iou = 0.5
+max_detections = 50
+[models.class_thresholds]
+person = 0.11
+car = 0.15
+dog = 0.25
+cat = 0.04
+bicycle = 0.11
+truck = 0.21
+bus = 0.58
+
+[[models]]
+name = "ssdlite-mobiledet-320"
+default = false
+path = "/opt/tpue/models/ssdlite_mobiledet_coco_qat_postprocess_edgetpu.tflite"
+labels = "/opt/tpue/models/labelmap.txt"
+type = "ssd"
+input_size = 320
+preprocess = "letterbox"
+threshold = 0.47
+nms_iou = 0.5
+max_detections = 10
+[models.class_thresholds]
+person = 0.52
+car = 0.47
+dog = 0.58
+cat = 0.58
+bicycle = 0.47
+bus = 0.61
