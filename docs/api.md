@@ -53,6 +53,7 @@ A successful response has this shape:
   "image": {"width": 640, "height": 360},
   "timing_ms": {
     "decode": 1.8,
+    "queue": 0.1,
     "preprocess": 0.6,
     "inference": 34.9,
     "postprocess": 0.4,
@@ -98,8 +99,41 @@ label source, thresholds, preprocessing mode, and whether it is the default.
 Only the default model is loaded at startup; another model loads on its first
 request and remains resident.
 
+`GET /v1/stats` returns counters and timings collected since the service
+started; they reset on restart. The page at `/` shows the same numbers and
+refreshes them every two seconds.
+
+```json
+{
+  "uptime_s": 86400,
+  "requests": {
+    "total": 1204, "succeeded": 1200, "failed": 4, "last_minute": 12,
+    "last_request_age_s": 1.4,
+    "errors": {"400": 3, "503": 1},
+    "last_error": {"status": 400, "message": "image is empty", "age_s": 812.0}
+  },
+  "pipeline": {"in_flight": 1, "queued": 0, "queue_depth": 8, "busy_last_minute": 0.07},
+  "images": {"received": 1201, "bytes": 96080000, "pixels": 2490000000, "mean_bytes": 80000.0, "mean_megapixels": 2.07},
+  "detections": {"total": 310, "images_with_detections": 190, "by_class": {"car": 250, "person": 60}},
+  "models": {"yolov9s-512": 1200},
+  "timing_ms": {
+    "window": 1200,
+    "inference": {"mean": 34.9, "p50": 34.7, "p95": 36.2, "max": 51.0}
+  }
+}
+```
+
+`timing_ms` has one entry for each of `decode`, `queue`, `preprocess`,
+`inference`, `postprocess`, and `total`. `mean` covers every successful request
+since start; `p50`, `p95`, and `max` cover the last `window` successful
+requests, at most 4096. `in_flight` counts requests anywhere between arrival
+and response, `queued` those waiting for the inference lane.
+`busy_last_minute` is the fraction of the last minute the inference lane spent
+on preprocessing, inference, and postprocessing.
+
 `GET /openapi.json` returns the hand-written OpenAPI 3.0.3 description embedded
-at build time. `GET /` renders this document as HTML.
+at build time. `GET /` renders this document as HTML
+below the live statistics.
 
 ## Errors
 

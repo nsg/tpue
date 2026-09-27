@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tpue</title>
+<style>
+:root{color-scheme:light dark;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--line:#e3e2dd;--bar:#2a78d6;--track:#cde2fb;--code:#eeede9;--good:#0ca30c;--critical:#d03b3b}
+@media (prefers-color-scheme:dark){:root{--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--line:#383835;--bar:#3987e5;--track:#0d366b;--code:#2a2a28}}
+body{font:16px/1.5 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;background:var(--page);color:var(--ink)}
+code{background:var(--code);padding:.15rem .3rem;border-radius:3px}
+pre{background:var(--code);padding:.8rem;overflow-x:auto;border-radius:6px}
+pre code{background:none;padding:0}
+table{border-collapse:collapse}
+th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
+#stats{margin-bottom:3rem}
+#stats header{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}
+#stats h1{margin:0}
+#stats h2{font-size:1rem;margin:1.6rem 0 .5rem}
+#status{color:var(--ink2);font-size:.9rem}
+#status::before{content:"";display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.4rem;background:var(--muted)}
+#status.ok::before{background:var(--good)}
+#status.down::before{background:var(--critical)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.75rem;margin-top:1rem}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem}
+.tile .label{color:var(--ink2);font-size:.8rem}
+.tile .value{font-size:1.5rem;font-weight:600}
+.tile .note{color:var(--muted);font-size:.8rem}
+.meter{height:6px;border-radius:3px;background:var(--track);margin-top:.4rem;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--bar);border-radius:3px}
+#stats table{width:100%;font-size:.9rem;background:var(--surface)}
+#stats td.num,#stats th.num{text-align:right;font-variant-numeric:tabular-nums}
+#stats td.bar{width:35%}
+#stats td.bar i{display:block;height:10px;min-width:1px;background:var(--bar);border-radius:0 4px 4px 0}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0 1.5rem}
+.empty{color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<section id="stats">
+<header><h1>tpue</h1><span id="status">loading</span></header>
+<noscript><p>Live statistics need JavaScript; the raw numbers are at <a href="/v1/stats">/v1/stats</a>.</p></noscript>
+<div class="tiles" id="tiles"></div>
+<h2>Pipeline timing <span class="empty" id="window"></span></h2>
+<table>
+<thead><tr><th>Stage</th><th class="num">Mean ms</th><th class="num">p50</th><th class="num">p95</th><th class="num">Max</th><th>Share of mean</th></tr></thead>
+<tbody id="timing"></tbody>
+</table>
+<div class="cols">
+<div><h2>Detections by class</h2><div id="classes"></div></div>
+<div><h2>Requests by model</h2><div id="models"></div><h2>Errors by status</h2><div id="errors"></div></div>
+</div>
+</section>
+{{docs}}
+<script>
+const $ = id => document.getElementById(id);
+const esc = text => String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const count = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'G' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(1) + 'K' : n.toLocaleString('en');
+const ms = n => n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2);
+const percent = n => (n * 100).toFixed(n > 0 && n < 0.1 ? 1 : 0) + '%';
+const bytes = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : n >= 1e3 ? (n / 1e3).toFixed(1) + ' kB' : n.toFixed(0) + ' B';
+const span = s => {
+  if (s == null) return 'never';
+  s = Math.floor(s);
+  if (s < 60) return s + ' s';
+  if (s < 3600) return Math.floor(s / 60) + ' min';
+  if (s < 86400) return Math.floor(s / 3600) + ' h ' + Math.floor(s % 3600 / 60) + ' min';
+  return Math.floor(s / 86400) + ' d ' + Math.floor(s % 86400 / 3600) + ' h';
+};
+const tile = (label, value, note, meter) =>
+  `<div class="tile"><div class="label">${label}</div><div class="value">${value}</div>` +
+  (meter == null ? '' : `<div class="meter"><i style="width:${Math.min(100, meter * 100)}%"></i></div>`) +
+  (note ? `<div class="note">${esc(note)}</div>` : '') + '</div>';
+const counts = (id, map, empty) => {
+  const rows = Object.entries(map).sort((a, b) => b[1] - a[1]);
+  const top = rows.length ? rows[0][1] : 0;
+  $(id).innerHTML = rows.length
+    ? '<table>' + rows.map(([name, n]) =>
+        `<tr><td>${esc(name)}</td><td class="num">${count(n)}</td><td class="bar"><i style="width:${n / top * 100}%"></i></td></tr>`).join('') + '</table>'
+    : `<p class="empty">${empty}</p>`;
+};
+async function refresh() {
+  try {
+    const [stats, health] = await Promise.all([
+      fetch('/v1/stats').then(r => r.json()),
+      fetch('/healthz').then(async r => ({ok: r.ok, body: await r.json()})),
+    ]);
+    const status = $('status');
+    status.className = health.ok ? 'ok' : 'down';
+    status.textContent = health.ok
+      ? `ready · ${health.body.model} on ${health.body.device}`
+      : `unavailable · ${health.body.error}`;
+    const r = stats.requests, p = stats.pipeline, d = stats.detections, i = stats.images, t = stats.timing_ms;
+    const last = r.last_error;
+    $('tiles').innerHTML = [
+      tile('Uptime', span(stats.uptime_s)),
+      tile('Requests', count(r.total), `last ${span(r.last_request_age_s)}${r.last_request_age_s == null ? '' : ' ago'}`),
+      tile('Succeeded', count(r.succeeded), r.total ? percent(r.succeeded / r.total) + ' of requests' : ''),
+      tile('Failed', count(r.failed), last ? `${last.status} ${span(last.age_s)} ago: ${last.message}` : ''),
+      tile('Requests last minute', count(r.last_minute), (r.last_minute / 60).toFixed(2) + ' per second'),
+      tile('In flight', count(p.in_flight), 'decoding, queued or running'),
+      tile('Queued', `${p.queued} / ${p.queue_depth}`, 'waiting for the TPU', p.queue_depth ? p.queued / p.queue_depth : 0),
+      tile('Inference lane busy', percent(p.busy_last_minute), 'of the last minute', p.busy_last_minute),
+      tile('Latency p50', t.window ? ms(t.total.p50) + ' ms' : 'n/a', t.window ? `p95 ${ms(t.total.p95)} ms` : ''),
+      tile('Detections', count(d.total), r.succeeded ? `${percent(d.images_with_detections / r.succeeded)} of images had any` : ''),
+      tile('Image data', bytes(i.bytes), i.bytes ? `mean ${bytes(i.mean_bytes)}` : ''),
+      tile('Pixels', count(i.pixels), i.pixels ? `mean ${i.mean_megapixels.toFixed(2)} MP` : ''),
+    ].join('');
+    $('window').textContent = t.window ? `percentiles over the last ${count(t.window)} requests, mean since start` : '';
+    const stages = ['decode', 'queue', 'preprocess', 'inference', 'postprocess'];
+    const sum = stages.reduce((total, name) => total + t[name].mean, 0);
+    $('timing').innerHTML = [...stages, 'total'].map(name => {
+      const s = t[name];
+      const bar = name === 'total' || !sum ? '' : `<i style="width:${s.mean / sum * 100}%" title="${percent(s.mean / sum)}"></i>`;
+      return `<tr><td>${name}</td><td class="num">${ms(s.mean)}</td><td class="num">${ms(s.p50)}</td><td class="num">${ms(s.p95)}</td><td class="num">${ms(s.max)}</td><td class="bar">${bar}</td></tr>`;
+    }).join('');
+    counts('classes', d.by_class, 'No detections yet.');
+    counts('models', stats.models, 'No requests served yet.');
+    counts('errors', r.errors, 'No errors.');
+  } catch (error) {
+    $('status').className = 'down';
+    $('status').textContent = 'statistics unavailable: ' + error.message;
+  }
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

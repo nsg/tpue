@@ -62,6 +62,22 @@
         }
       }
     },
+    "/v1/stats": {
+      "get": {
+        "operationId": "stats",
+        "summary": "Counters and timings since start",
+        "responses": {
+          "200": {
+            "description": "Current statistics",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatsResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "operationId": "openApiDocument",
@@ -262,13 +278,102 @@
       },
       "Timing": {
         "type": "object",
-        "required": ["decode", "preprocess", "inference", "postprocess", "total"],
+        "required": ["decode", "queue", "preprocess", "inference", "postprocess", "total"],
         "properties": {
           "decode": { "type": "number", "format": "double", "minimum": 0 },
+          "queue": {
+            "type": "number",
+            "format": "double",
+            "minimum": 0,
+            "description": "Time spent waiting for the inference lane"
+          },
           "preprocess": { "type": "number", "format": "double", "minimum": 0 },
           "inference": { "type": "number", "format": "double", "minimum": 0 },
           "postprocess": { "type": "number", "format": "double", "minimum": 0 },
           "total": { "type": "number", "format": "double", "minimum": 0 }
+        }
+      },
+      "StatsResponse": {
+        "type": "object",
+        "required": ["uptime_s", "requests", "pipeline", "images", "detections", "models", "timing_ms"],
+        "properties": {
+          "uptime_s": { "type": "integer", "format": "int64", "minimum": 0 },
+          "requests": {
+            "type": "object",
+            "required": ["total", "succeeded", "failed", "last_minute", "last_request_age_s", "errors", "last_error"],
+            "properties": {
+              "total": { "type": "integer", "format": "int64", "minimum": 0 },
+              "succeeded": { "type": "integer", "format": "int64", "minimum": 0 },
+              "failed": { "type": "integer", "format": "int64", "minimum": 0 },
+              "last_minute": { "type": "integer", "format": "int64", "minimum": 0 },
+              "last_request_age_s": { "type": "number", "format": "double", "minimum": 0, "nullable": true },
+              "errors": { "type": "object", "additionalProperties": { "type": "integer", "format": "int64", "minimum": 0 } },
+              "last_error": {
+                "type": "object",
+                "nullable": true,
+                "required": ["status", "message", "age_s"],
+                "properties": {
+                  "status": { "type": "integer" },
+                  "message": { "type": "string" },
+                  "age_s": { "type": "number", "format": "double", "minimum": 0 }
+                }
+              }
+            }
+          },
+          "pipeline": {
+            "type": "object",
+            "required": ["in_flight", "queued", "queue_depth", "busy_last_minute"],
+            "properties": {
+              "in_flight": { "type": "integer", "format": "int64", "minimum": 0 },
+              "queued": { "type": "integer", "format": "int64", "minimum": 0 },
+              "queue_depth": { "type": "integer", "format": "int64", "minimum": 0 },
+              "busy_last_minute": { "type": "number", "format": "double", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "images": {
+            "type": "object",
+            "required": ["received", "bytes", "pixels", "mean_bytes", "mean_megapixels"],
+            "properties": {
+              "received": { "type": "integer", "format": "int64", "minimum": 0 },
+              "bytes": { "type": "integer", "format": "int64", "minimum": 0 },
+              "pixels": { "type": "integer", "format": "int64", "minimum": 0 },
+              "mean_bytes": { "type": "number", "format": "double", "minimum": 0 },
+              "mean_megapixels": { "type": "number", "format": "double", "minimum": 0 }
+            }
+          },
+          "detections": {
+            "type": "object",
+            "required": ["total", "images_with_detections", "by_class"],
+            "properties": {
+              "total": { "type": "integer", "format": "int64", "minimum": 0 },
+              "images_with_detections": { "type": "integer", "format": "int64", "minimum": 0 },
+              "by_class": { "type": "object", "additionalProperties": { "type": "integer", "format": "int64", "minimum": 0 } }
+            }
+          },
+          "models": { "type": "object", "additionalProperties": { "type": "integer", "format": "int64", "minimum": 0 } },
+          "timing_ms": {
+            "type": "object",
+            "required": ["window", "decode", "queue", "preprocess", "inference", "postprocess", "total"],
+            "properties": {
+              "window": { "type": "integer", "format": "int64", "minimum": 0 },
+              "decode": { "$ref": "#/components/schemas/StageStats" },
+              "queue": { "$ref": "#/components/schemas/StageStats" },
+              "preprocess": { "$ref": "#/components/schemas/StageStats" },
+              "inference": { "$ref": "#/components/schemas/StageStats" },
+              "postprocess": { "$ref": "#/components/schemas/StageStats" },
+              "total": { "$ref": "#/components/schemas/StageStats" }
+            }
+          }
+        }
+      },
+      "StageStats": {
+        "type": "object",
+        "required": ["mean", "p50", "p95", "max"],
+        "properties": {
+          "mean": { "type": "number", "format": "double", "minimum": 0 },
+          "p50": { "type": "number", "format": "double", "minimum": 0 },
+          "p95": { "type": "number", "format": "double", "minimum": 0 },
+          "max": { "type": "number", "format": "double", "minimum": 0 }
         }
       },
       "HealthResponse": {

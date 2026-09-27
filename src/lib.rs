@@ -3,4 +3,5 @@ pub mod config;
 pub mod models;
 pub mod preprocess;
 pub mod server;
+pub mod stats;
 pub mod tflite;

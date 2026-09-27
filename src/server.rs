@@ -25,6 +25,7 @@ use crate::models::{
     YoloGeneric,
 };
 use crate::preprocess::{PreprocessMode, Preprocessor};
+use crate::stats::{Stats, StatsResponse};
 use crate::tflite::{Device, ElementType, Interpreter, Model, Runtime};
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +55,7 @@ pub struct ImageSize {
 #[derive(Debug, Clone, Serialize)]
 pub struct Timing {
     pub decode: f64,
+    pub queue: f64,
     pub preprocess: f64,
     pub inference: f64,
     pub postprocess: f64,
@@ -119,6 +121,7 @@ struct RequestOptions {
 struct AppState {
     config: Arc<Config>,
     engine: Engine,
+    stats: Arc<Stats>,
     started: Instant,
 }
 
@@ -126,6 +129,7 @@ struct AppState {
 struct Engine {
     sender: mpsc::SyncSender<Job>,
     health: Arc<Mutex<EngineHealth>>,
+    stats: Arc<Stats>,
 }
 
 #[derive(Debug, Default)]
@@ -139,6 +143,7 @@ struct Job {
     model: String,
     image: DynamicImage,
     decode_ms: f64,
+    queued: Instant,
     options: RequestOptions,
     response: oneshot::Sender<Result<DetectionResponse, String>>,
 }
@@ -153,16 +158,23 @@ struct LoadedModel {
 }
 
 impl Engine {
-    fn start(config: Arc<Config>) -> Self {
+    fn start(config: Arc<Config>, stats: Arc<Stats>) -> Self {
         let (sender, receiver) = mpsc::sync_channel(config.server.queue_depth);
         let health = Arc::new(Mutex::new(EngineHealth::default()));
         let worker_health = Arc::clone(&health);
+        let worker_stats = Arc::clone(&stats);
         let preprocessor = Preprocessor::new();
         std::thread::Builder::new()
             .name("tpue-inference".into())
-            .spawn(move || inference_thread(config, receiver, worker_health, preprocessor))
+            .spawn(move || {
+                inference_thread(config, receiver, worker_health, worker_stats, preprocessor)
+            })
             .expect("could not start inference thread");
-        Self { sender, health }
+        Self {
+            sender,
+            health,
+            stats,
+        }
     }
 
     async fn detect(
@@ -174,18 +186,23 @@ impl Engine {
         timeout: Duration,
     ) -> Result<DetectionResponse, ApiError> {
         let (response, receiver) = oneshot::channel();
+        self.stats.enqueued();
         self.sender
             .try_send(Job {
                 model,
                 image,
                 decode_ms,
+                queued: Instant::now(),
                 options,
                 response,
             })
-            .map_err(|error| match error {
-                mpsc::TrySendError::Full(_) => ApiError::unavailable("inference queue is full"),
-                mpsc::TrySendError::Disconnected(_) => {
-                    ApiError::unavailable("inference thread is unavailable")
+            .map_err(|error| {
+                self.stats.dequeued();
+                match error {
+                    mpsc::TrySendError::Full(_) => ApiError::unavailable("inference queue is full"),
+                    mpsc::TrySendError::Disconnected(_) => {
+                        ApiError::unavailable("inference thread is unavailable")
+                    }
                 }
             })?;
         tokio::time::timeout(timeout, receiver)
@@ -200,6 +217,7 @@ fn inference_thread(
     config: Arc<Config>,
     receiver: mpsc::Receiver<Job>,
     health: Arc<Mutex<EngineHealth>>,
+    stats: Arc<Stats>,
     mut preprocessor: Preprocessor,
 ) {
     let runtime = match Runtime::load(
@@ -240,6 +258,7 @@ fn inference_thread(
     }
 
     while let Ok(job) = receiver.recv() {
+        stats.dequeued();
         let result = run_job(
             &runtime,
             device,
@@ -352,6 +371,7 @@ fn run_job(
     preprocessor: &mut Preprocessor,
     job: &Job,
 ) -> Result<DetectionResponse> {
+    let queue_ms = elapsed_ms(job.queued);
     if !models.contains_key(&job.model) {
         let model_config = config
             .model(&job.model)
@@ -412,10 +432,11 @@ fn run_job(
         },
         timing_ms: Timing {
             decode: job.decode_ms,
+            queue: queue_ms,
             preprocess: preprocess_ms,
             inference: inference_ms,
             postprocess: postprocess_ms,
-            total: job.decode_ms + preprocess_ms + inference_ms + postprocess_ms,
+            total: job.decode_ms + queue_ms + preprocess_ms + inference_ms + postprocess_ms,
         },
     })
 }
@@ -490,15 +511,18 @@ pub async fn serve(config: Config) -> Result<()> {
     let bind = config.server.bind.clone();
     let max_body_bytes = config.server.max_body_bytes;
     let config = Arc::new(config);
+    let stats = Arc::new(Stats::new(config.server.queue_depth));
     let state = AppState {
-        engine: Engine::start(Arc::clone(&config)),
+        engine: Engine::start(Arc::clone(&config), Arc::clone(&stats)),
         config,
+        stats,
         started: Instant::now(),
     };
     let app = Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
         .route("/v1/models", get(models_endpoint))
+        .route("/v1/stats", get(stats_endpoint))
         .route("/openapi.json", get(openapi))
         .route("/v1/detect", post(detect_endpoint))
         .layer(DefaultBodyLimit::max(max_body_bytes))
@@ -528,7 +552,8 @@ pub async fn detect_file(config: Config, path: &Path) -> Result<DetectionRespons
     let model = config.default_model().name.clone();
     let timeout =
         Duration::from_secs(30).max(Duration::from_millis(config.server.request_timeout_ms));
-    Engine::start(Arc::clone(&config))
+    let stats = Arc::new(Stats::new(config.server.queue_depth));
+    Engine::start(Arc::clone(&config), stats)
         .detect(
             model,
             image,
@@ -556,8 +581,10 @@ pub fn models_json(config: &Config) -> serde_json::Value {
 }
 
 async fn detect_endpoint(State(state): State<AppState>, request: Request) -> Response {
+    let _in_flight = state.stats.begin();
     match detect_request(&state, request).await {
         Ok(response) => {
+            state.stats.record_success(&response);
             tracing::info!(
                 model = %response.model,
                 width = response.image.width,
@@ -569,7 +596,12 @@ async fn detect_endpoint(State(state): State<AppState>, request: Request) -> Res
             );
             Json(response).into_response()
         }
-        Err(error) => error.into_response(),
+        Err(error) => {
+            state
+                .stats
+                .record_error(error.status.as_u16(), &error.message);
+            error.into_response()
+        }
     }
 }
 
@@ -632,6 +664,7 @@ async fn detect_request(state: &AppState, request: Request) -> Result<DetectionR
     if bytes.is_empty() {
         return Err(ApiError::bad_request("image is empty"));
     }
+    state.stats.record_image_bytes(bytes.len());
     if let Some(json) = json_overrides {
         if query.threshold.is_none() {
             query.threshold = json.threshold;
@@ -745,6 +778,10 @@ fn model_response(model: &ModelConfig, input_size: Option<u32>) -> ModelResponse
     }
 }
 
+async fn stats_endpoint(State(state): State<AppState>) -> Json<StatsResponse> {
+    Json(state.stats.snapshot())
+}
+
 async fn root() -> Html<String> {
     let mut rendered = String::new();
     let parser = MarkdownParser::new_ext(
@@ -752,9 +789,7 @@ async fn root() -> Html<String> {
         MarkdownOptions::ENABLE_TABLES | MarkdownOptions::ENABLE_STRIKETHROUGH,
     );
     html::push_html(&mut rendered, parser);
-    Html(format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><title>tpue API</title><style>body{{font:16px system-ui;max-width:900px;margin:2rem auto;padding:0 1rem}}code{{background:#eee;padding:.15rem .3rem}}table{{border-collapse:collapse}}th,td{{border:1px solid #ccc;padding:.4rem}}</style></head><body>{rendered}</body></html>"
-    ))
+    Html(include_str!("root.html").replace("{{docs}}", &rendered))
 }
 
 async fn openapi() -> Response {
