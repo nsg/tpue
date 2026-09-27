@@ -125,8 +125,8 @@ curl --fail-with-body -H 'Content-Type: image/jpeg' \
 
 `GET /healthz` reports readiness, `GET /v1/models` lists configured models,
 `GET /v1/stats` returns request counters and stage timings,
-`GET /openapi.json` returns the OpenAPI document, and `GET /` serves live
-statistics above the reference as HTML. See [docs/api.md](docs/api.md) for request forms,
+`GET /openapi.json` returns the OpenAPI document, `GET /` shows live
+statistics, and `GET /docs` serves the reference as HTML. See [docs/api.md](docs/api.md) for request forms,
 overrides, response fields, concurrency, and errors.
 
 ## Runtime requirements

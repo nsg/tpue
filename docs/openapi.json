@@ -8,6 +8,22 @@
   "paths": {
     "/": {
       "get": {
+        "operationId": "statisticsPage",
+        "summary": "Live statistics page",
+        "responses": {
+          "200": {
+            "description": "HTML statistics page",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
         "operationId": "apiDocumentation",
         "summary": "Rendered API documentation",
         "responses": {

@@ -520,6 +520,7 @@ pub async fn serve(config: Config) -> Result<()> {
     };
     let app = Router::new()
         .route("/", get(root))
+        .route("/docs", get(docs))
         .route("/healthz", get(healthz))
         .route("/v1/models", get(models_endpoint))
         .route("/v1/stats", get(stats_endpoint))
@@ -782,14 +783,18 @@ async fn stats_endpoint(State(state): State<AppState>) -> Json<StatsResponse> {
     Json(state.stats.snapshot())
 }
 
-async fn root() -> Html<String> {
+async fn root() -> Html<&'static str> {
+    Html(include_str!("stats.html"))
+}
+
+async fn docs() -> Html<String> {
     let mut rendered = String::new();
     let parser = MarkdownParser::new_ext(
         include_str!("../docs/api.md"),
         MarkdownOptions::ENABLE_TABLES | MarkdownOptions::ENABLE_STRIKETHROUGH,
     );
     html::push_html(&mut rendered, parser);
-    Html(include_str!("root.html").replace("{{docs}}", &rendered))
+    Html(include_str!("docs.html").replace("{{docs}}", &rendered))
 }
 
 async fn openapi() -> Response {

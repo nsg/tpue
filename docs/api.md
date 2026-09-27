@@ -1,7 +1,8 @@
 # tpue HTTP API
 
 tpue exposes an unauthenticated HTTP API intended for a trusted LAN. Endpoint
-responses are JSON; the documentation page at `/` is HTML.
+responses are JSON; the statistics page at `/` and this document at `/docs`
+are HTML.
 
 ## Detect objects
 
@@ -132,8 +133,8 @@ and response, `queued` those waiting for the inference lane.
 on preprocessing, inference, and postprocessing.
 
 `GET /openapi.json` returns the hand-written OpenAPI 3.0.3 description embedded
-at build time. `GET /` renders this document as HTML
-below the live statistics.
+at build time. `GET /docs` renders this document as HTML and
+`GET /` shows the live statistics.
 
 ## Errors
 

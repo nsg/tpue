@@ -13,8 +13,9 @@ pre{background:var(--code);padding:.8rem;overflow-x:auto;border-radius:6px}
 pre code{background:none;padding:0}
 table{border-collapse:collapse}
 th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
-#stats{margin-bottom:3rem}
-#stats header{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap}
+#stats header{display:flex;align-items:baseline;gap:.3rem 1rem;flex-wrap:wrap}
+#stats nav{margin-left:auto;font-size:.9rem}
+#status{overflow-wrap:anywhere}
 #stats h1{margin:0}
 #stats h2{font-size:1rem;margin:1.6rem 0 .5rem}
 #status{color:var(--ink2);font-size:.9rem}
@@ -25,7 +26,7 @@ th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem}
 .tile .label{color:var(--ink2);font-size:.8rem}
 .tile .value{font-size:1.5rem;font-weight:600}
-.tile .note{color:var(--muted);font-size:.8rem}
+.tile .note{color:var(--muted);font-size:.8rem;overflow-wrap:anywhere}
 .meter{height:6px;border-radius:3px;background:var(--track);margin-top:.4rem;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--bar);border-radius:3px}
 #stats table{width:100%;font-size:.9rem;background:var(--surface)}
@@ -33,17 +34,27 @@ th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
 #stats td.bar{width:35%}
 #stats td.bar i{display:block;height:10px;min-width:1px;background:var(--bar);border-radius:0 4px 4px 0}
 .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0 1.5rem}
-.empty{color:var(--muted);font-size:.9rem}
+.empty{color:var(--muted);font-size:.9rem;font-weight:400}
+@media (max-width:600px){
+body{margin:1rem auto}
+.tiles{grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+.tile{padding:.6rem .7rem}
+.tile .value{font-size:1.25rem}
+#stats table{font-size:.8rem}
+#stats th,#stats td{padding:.3rem .35rem}
+#timing td.bar,#stats thead th.share{display:none}
+#window{display:block}
+}
 </style>
 </head>
 <body>
 <section id="stats">
-<header><h1>tpue</h1><span id="status">loading</span></header>
+<header><h1>tpue</h1><span id="status">loading</span><nav><a href="/docs">API documentation</a> · <a href="/v1/stats">JSON</a></nav></header>
 <noscript><p>Live statistics need JavaScript; the raw numbers are at <a href="/v1/stats">/v1/stats</a>.</p></noscript>
 <div class="tiles" id="tiles"></div>
 <h2>Pipeline timing <span class="empty" id="window"></span></h2>
 <table>
-<thead><tr><th>Stage</th><th class="num">Mean ms</th><th class="num">p50</th><th class="num">p95</th><th class="num">Max</th><th>Share of mean</th></tr></thead>
+<thead><tr><th>Stage</th><th class="num">Mean ms</th><th class="num">p50</th><th class="num">p95</th><th class="num">Max</th><th class="share">Share of mean</th></tr></thead>
 <tbody id="timing"></tbody>
 </table>
 <div class="cols">
@@ -51,7 +62,6 @@ th,td{border:1px solid var(--line);padding:.4rem .6rem;text-align:left}
 <div><h2>Requests by model</h2><div id="models"></div><h2>Errors by status</h2><div id="errors"></div></div>
 </div>
 </section>
-{{docs}}
 <script>
 const $ = id => document.getElementById(id);
 const esc = text => String(text).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
