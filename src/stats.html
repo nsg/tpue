@@ -4,9 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>tpue</title>
+<script>
+try { document.documentElement.dataset.theme = localStorage.getItem('theme') || ''; } catch (error) {}
+</script>
 <style>
 :root{color-scheme:light dark;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--line:#e3e2dd;--bar:#2a78d6;--track:#cde2fb;--code:#eeede9;--good:#0ca30c;--critical:#d03b3b}
-@media (prefers-color-scheme:dark){:root{--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--line:#383835;--bar:#3987e5;--track:#0d366b;--code:#2a2a28}}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--line:#383835;--bar:#3987e5;--track:#0d366b;--code:#2a2a28}}
+:root[data-theme=dark]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--line:#383835;--bar:#3987e5;--track:#0d366b;--code:#2a2a28}
+:root[data-theme=light]{color-scheme:light}
+#theme{font:inherit;color:var(--ink2);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:.1rem .5rem;cursor:pointer}
 body{font:16px/1.5 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem;background:var(--page);color:var(--ink)}
 code{background:var(--code);padding:.15rem .3rem;border-radius:3px}
 pre{background:var(--code);padding:.8rem;overflow-x:auto;border-radius:6px}
@@ -49,7 +55,7 @@ body{margin:1rem auto}
 </head>
 <body>
 <section id="stats">
-<header><h1>tpue</h1><span id="status">loading</span><nav><a href="/docs">API documentation</a> · <a href="/v1/stats">JSON</a></nav></header>
+<header><h1>tpue</h1><span id="status">loading</span><nav><a href="/docs">API documentation</a> · <a href="/v1/stats">JSON</a> · <button id="theme" type="button" aria-label="Switch colour theme"></button></nav></header>
 <noscript><p>Live statistics need JavaScript; the raw numbers are at <a href="/v1/stats">/v1/stats</a>.</p></noscript>
 <div class="tiles" id="tiles"></div>
 <h2>Pipeline timing <span class="empty" id="window"></span></h2>
@@ -134,6 +140,20 @@ async function refresh() {
 }
 refresh();
 setInterval(refresh, 2000);
+</script>
+<script>
+{
+  const root = document.documentElement, button = document.getElementById('theme');
+  const dark = () => root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme:dark)').matches;
+  const label = () => { button.textContent = dark() ? 'Light' : 'Dark'; };
+  button.onclick = () => {
+    root.dataset.theme = dark() ? 'light' : 'dark';
+    try { localStorage.setItem('theme', root.dataset.theme); } catch (error) {}
+    label();
+  };
+  matchMedia('(prefers-color-scheme:dark)').onchange = label;
+  label();
+}
 </script>
 </body>
 </html>
